@@ -82,4 +82,39 @@ func (s *Server) serverCodec(cc codec.Codec){
   _ = cc.Close()
 }
 
+type request struct {
+  h            *codec.Header  //请求头部
+  argv,replyv  reflect.Value
+  svc          *service
+  mtype        *methodType
+}
 
+func (s *Server) readRequest(cc codec.Codec) (*request,error){
+  h,err := cc.ReadHeader() //1.读取头部
+  if err != nil {
+    return nil,err
+  }
+
+  req := &request{h:h} //2.创建上下文
+  req.svc,req.mtype,err = s.findService(h.ServiceMethod) //3.查找服务
+  if err != nil{
+    return req,err
+  }
+
+  req.argv = req.mtype.newArgv() //4.创建参数容器
+  req.replyv = req.mtype.newReplyv() //5.创建响应容器
+
+  //6.准备解码
+  argvi := req.argv.Interface()
+  if req.argv.Kind() != reflect.Ptr{
+    argvi = req.argv.Addr().Interface()
+  }
+
+  //7.读取体部
+  if err = cc.ReadBody(argvi);err != nil{
+    log.Println("rpc server:read body error:",err)
+    return req,err
+  }
+
+  return req,nil
+}
