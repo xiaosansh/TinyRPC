@@ -6,13 +6,13 @@ import(
 )
 
 type Request struct{
-  ServerMethod string
-  Req uint64
+  ServiceMethod string
+  Seq uint64
   Argv any
 }
 
 type Response struct{
-  Req uint64
+  Seq uint64
   Error string
   Reply any
 }
@@ -33,7 +33,7 @@ func NewJSONCodec(conn io.ReadWriteCloser) *JSONCodec {
   return &JSONCodec{
     conn: conn,
     dec: json.NewDecoder(conn),
-    enc: json.NewEnconder(conn),
+    enc: json.NewEncoder(conn),
   }
 }
 
