@@ -118,3 +118,50 @@ func (s *Server) readRequest(cc codec.Codec) (*request,error){
 
   return req,nil
 }
+
+//findService解析请求中的service.method并且定位已经注册的服务
+func (s *Server) findService(ServiceMethod string) (*service,*methodType,error){
+  //分别获取服务名和方法名
+  serviceName := serviceMethod[:dot]
+  methodName := serviceMethod[dot+1:]
+
+  svcInterface,ok := s.serviceMap.Load(serviceName) //读取sync.Map
+  if !ok {
+    return nil,nil,fmt.Errorf("rpc server:can't find server %s",serviceName)
+  }
+
+  svc := svcInterface.(*service) //类型断言
+  mtype := svc.method[methodName] //读取普通map，获取mtype，因为后续注册后不被更改所以并发读取没什么问题
+  if mtype == nil {
+    return nil,nil,fmt.Errorf("rpc server:can't find method %s", methodName)
+  }
+
+  return svc,mtype,nil
+}
+
+//handleRequest 调用目标方法并返回结果
+func (s *Server) handleRequest(cc codec.Codec,req *request,sending *sync.Mutex,wg *sync.WaitGroup){
+  defer wg.Done()  //确保WaitGroup的计数器在减少
+
+  err := req.svc.call(req.mtype,req.argv,rep.replyv) //执行真正的业务逻辑
+  if err != nil{
+    req.h.Error = err.Error()                            //错误处理
+    s.sendResponse(cc,req.h,invalidRequest{},sending)
+    return
+  }
+
+  s.sendResponse(cc,req.h,req.replyv.Interface(),sending) //成功处理
+}
+
+//sendResponse发送响应给客户端
+func (s *Server) sendResponse(cc codec.Codec,h *codec.Header,body interface{},sending *sync.Mutex){
+  //确保同一时刻只有一个goroutine能写入数据
+  sending.Lock()
+  defer sending.Unlock()
+
+  if err := cc.Write(h,body); err != nil{
+    log.Println("rpc server: write response error:", err)
+  }
+}
+
+type invalidRequest struct{}
